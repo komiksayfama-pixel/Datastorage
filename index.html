@@ -1,3 +1,213 @@
+<?php
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+// ================= EN GÜÇLÜ 5 USER-AGENT =================
+$user_agents = [
+    'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1)',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/119.0'
+];
+
+// ================= EN GÜÇLÜ REQUEST FONKSİYONU =================
+function ultraRequest($url, $retry = 3) {
+    global $user_agents;
+    
+    for ($i = 0; $i < $retry; $i++) {
+        $ch = curl_init();
+        
+        // Rastgele User-Agent seç
+        $user_agent = $user_agents[array_rand($user_agents)];
+        
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_USERAGENT, $user_agent);
+        curl_setopt($ch, CURLOPT_ENCODING, 'gzip, deflate, br');
+        curl_setopt($ch, CURLOPT_COOKIEFILE, sys_get_temp_dir() . '/cookies.txt');
+        curl_setopt($ch, CURLOPT_COOKIEJAR, sys_get_temp_dir() . '/cookies.txt');
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/json, text/plain, */*',
+            'Accept-Language: tr-TR,tr;q=0.9,en;q=0.8',
+            'Accept-Encoding: gzip, deflate, br',
+            'Connection: keep-alive',
+            'Referer: https://www.google.com/',
+            'Cache-Control: no-cache',
+            'Upgrade-Insecure-Requests: 1'
+        ]);
+        
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($http_code == 200 && !empty($response)) {
+            // JSON kontrolü
+            if (json_decode($response)) {
+                return $response;
+            }
+            
+            // JavaScript challenge var mı?
+            if (strpos($response, 'slowAES') !== false || strpos($response, 'toNumbers') !== false) {
+                // Cookie'yi çözmeyi dene
+                preg_match('/cookie="__test=([^"]+)"/', $response, $matches);
+                if (isset($matches[1])) {
+                    // Cookie ile tekrar istek yap
+                    $ch2 = curl_init();
+                    curl_setopt($ch2, CURLOPT_URL, $url);
+                    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch2, CURLOPT_COOKIE, '__test=' . $matches[1]);
+                    curl_setopt($ch2, CURLOPT_USERAGENT, $user_agent);
+                    $response2 = curl_exec($ch2);
+                    curl_close($ch2);
+                    
+                    if (json_decode($response2)) {
+                        return $response2;
+                    }
+                }
+            }
+            
+            return $response;
+        }
+        
+        sleep(1);
+    }
+    
+    return json_encode(['error' => 'Veri alınamadı', 'url' => $url]);
+}
+
+// ================= API ENDPOINT'LERİ (HER BİRİ BAĞIMSIZ) =================
+
+// 1. TC Sorgu
+if ($_GET['api'] == 'tc' || strpos($_SERVER['REQUEST_URI'], '/api/tc.php') !== false) {
+    $tc = isset($_GET['tc']) ? $_GET['tc'] : (isset($_POST['tc']) ? $_POST['tc'] : '');
+    if (empty($tc) || strlen($tc) != 11 || !is_numeric($tc)) {
+        die(json_encode(['error' => 'Geçerli bir TC girin (11 hane)']));
+    }
+    $url = "https://sorguapi.ct.ws/api/tc.php?key=MervePanel&tc=" . $tc;
+    echo ultraRequest($url);
+    exit;
+}
+
+// 2. GSM Sorgu
+if ($_GET['api'] == 'gsm' || strpos($_SERVER['REQUEST_URI'], '/api/gsm.php') !== false) {
+    $gsm = isset($_GET['gsm']) ? $_GET['gsm'] : (isset($_POST['gsm']) ? $_POST['gsm'] : '');
+    if (empty($gsm) || strlen($gsm) != 10 || !is_numeric($gsm)) {
+        die(json_encode(['error' => 'Geçerli bir GSM girin (5XXXXXXXXXX)']));
+    }
+    $url = "https://sorguapi.ct.ws/api/gsm.php?key=MervePanel&q=" . $gsm;
+    echo ultraRequest($url);
+    exit;
+}
+
+// 3. Adres Sorgu
+if ($_GET['api'] == 'adres' || strpos($_SERVER['REQUEST_URI'], '/api/adres.php') !== false) {
+    $tc = isset($_GET['tc']) ? $_GET['tc'] : (isset($_POST['tc']) ? $_POST['tc'] : '');
+    if (empty($tc) || strlen($tc) != 11 || !is_numeric($tc)) {
+        die(json_encode(['error' => 'Geçerli bir TC girin (11 hane)']));
+    }
+    $url = "https://sorguapi.ct.ws/api/adres.php?key=MervePanel&tc=" . $tc;
+    echo ultraRequest($url);
+    exit;
+}
+
+// 4. Aile Sorgu
+if ($_GET['api'] == 'aile' || strpos($_SERVER['REQUEST_URI'], '/api/aile.php') !== false) {
+    $tc = isset($_GET['tc']) ? $_GET['tc'] : (isset($_POST['tc']) ? $_POST['tc'] : '');
+    if (empty($tc) || strlen($tc) != 11 || !is_numeric($tc)) {
+        die(json_encode(['error' => 'Geçerli bir TC girin (11 hane)']));
+    }
+    $url = "https://sorguapi.ct.ws/api/aile.php?key=MervePanel&tc=" . $tc;
+    echo ultraRequest($url);
+    exit;
+}
+
+// 5. Sülasle Sorgu
+if ($_GET['api'] == 'sulale' || strpos($_SERVER['REQUEST_URI'], '/api/sulale.php') !== false) {
+    $tc = isset($_GET['tc']) ? $_GET['tc'] : (isset($_POST['tc']) ? $_POST['tc'] : '');
+    if (empty($tc) || strlen($tc) != 11 || !is_numeric($tc)) {
+        die(json_encode(['error' => 'Geçerli bir TC girin (11 hane)']));
+    }
+    $url = "https://arastir.sbs/api/sulale.php?tc=" . $tc;
+    echo ultraRequest($url);
+    exit;
+}
+
+// 6. Limitsiz Sorgu
+if ($_GET['api'] == 'limitsiz' || strpos($_SERVER['REQUEST_URI'], '/api/limitsiz.php') !== false) {
+    $tc = isset($_GET['tc']) ? $_GET['tc'] : (isset($_POST['tc']) ? $_POST['tc'] : '');
+    if (empty($tc) || strlen($tc) != 11 || !is_numeric($tc)) {
+        die(json_encode(['error' => 'Geçerli bir TC girin (11 hane)']));
+    }
+    $url = "https://sorguapi.ct.ws/api/limitsiz.php?key=MervePanel&tc=" . $tc;
+    echo ultraRequest($url);
+    exit;
+}
+
+// 7. CC Sorgu
+if ($_GET['api'] == 'cc' || strpos($_SERVER['REQUEST_URI'], '/api/cc.php') !== false) {
+    $bin = isset($_GET['bin']) ? $_GET['bin'] : (isset($_POST['bin']) ? $_POST['bin'] : '');
+    if (empty($bin) || strlen($bin) < 6 || !is_numeric($bin)) {
+        die(json_encode(['error' => 'Geçerli bir BIN girin (ilk 6 hane)']));
+    }
+    $url = "https://sorguapi.ct.ws/api/cc.php?key=MervePanel&bin=" . substr($bin, 0, 6);
+    echo ultraRequest($url);
+    exit;
+}
+
+// 8. BIN Sorgu
+if ($_GET['api'] == 'bin' || strpos($_SERVER['REQUEST_URI'], '/api/bin.php') !== false) {
+    $bin = isset($_GET['bin']) ? $_GET['bin'] : (isset($_POST['bin']) ? $_POST['bin'] : '');
+    if (empty($bin) || strlen($bin) < 6 || !is_numeric($bin)) {
+        die(json_encode(['error' => 'Geçerli bir BIN girin (ilk 6 hane)']));
+    }
+    $url = "https://sorguapi.ct.ws/api/bin.php?key=MervePanel&bin=" . substr($bin, 0, 6);
+    echo ultraRequest($url);
+    exit;
+}
+
+// 9. IP Sorgu
+if ($_GET['api'] == 'ip' || strpos($_SERVER['REQUEST_URI'], '/api/ip.php') !== false) {
+    $ip = isset($_GET['ip']) ? $_GET['ip'] : (isset($_POST['ip']) ? $_POST['ip'] : '');
+    if (empty($ip)) {
+        die(json_encode(['error' => 'Geçerli bir IP adresi girin']));
+    }
+    $url = "https://sorguapi.ct.ws/api/ip.php?key=MervePanel&ip=" . $ip;
+    echo ultraRequest($url);
+    exit;
+}
+
+// 10. Ad-Soyad Sorgu
+if ($_GET['api'] == 'adsoyad' || strpos($_SERVER['REQUEST_URI'], '/api/adsoyad.php') !== false) {
+    $adi = isset($_GET['adi']) ? $_GET['adi'] : (isset($_POST['adi']) ? $_POST['adi'] : '');
+    $soyadi = isset($_GET['soyadi']) ? $_GET['soyadi'] : (isset($_POST['soyadi']) ? $_POST['soyadi'] : '');
+    if (empty($adi) || empty($soyadi)) {
+        die(json_encode(['error' => 'Ad ve soyad girin']));
+    }
+    $url = "https://arastir.sbs/api/adsoyad.php?adi=" . urlencode($adi) . "&soyadi=" . urlencode($soyadi);
+    echo ultraRequest($url);
+    exit;
+}
+
+// 11. TC-GSM Sorgu
+if ($_GET['api'] == 'tcgsm' || strpos($_SERVER['REQUEST_URI'], '/api/tcgsm.php') !== false) {
+    $tc = isset($_GET['tc']) ? $_GET['tc'] : (isset($_POST['tc']) ? $_POST['tc'] : '');
+    if (empty($tc) || strlen($tc) != 11 || !is_numeric($tc)) {
+        die(json_encode(['error' => 'Geçerli bir TC girin (11 hane)']));
+    }
+    $url = "https://arastir.sbs/api/tcgsm.php?tc=" . $tc;
+    echo ultraRequest($url);
+    exit;
+}
+
+// ================= ANA SAYFA (API Listesi) =================
+?>
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -5,25 +215,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DOX-REX-VİP-SORGU-API</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 50%, #16213e 100%);
             min-height: 100vh;
             color: #fff;
         }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
         .header {
             text-align: center;
             padding: 30px 20px;
@@ -33,40 +232,20 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.1);
         }
-
         .header h1 {
             font-size: 2.5em;
             background: linear-gradient(45deg, #ff6b6b, #ffd93d, #6bcbff);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            margin-bottom: 10px;
         }
-
-        .header p {
-            color: #ccc;
-            font-size: 1.1em;
-        }
-
-        .status-badge {
-            display: inline-block;
-            background: #00ff88;
-            color: #000;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 0.8em;
-            margin-top: 10px;
-            font-weight: bold;
-        }
-
         .features {
             display: flex;
             justify-content: center;
             gap: 15px;
             flex-wrap: wrap;
-            margin-top: 15px;
+            margin: 20px 0;
         }
-
         .feature-badge {
             background: rgba(255,255,255,0.1);
             padding: 5px 12px;
@@ -74,29 +253,20 @@
             font-size: 0.7em;
             color: #ffd93d;
         }
-
         .api-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
-            margin-bottom: 30px;
         }
-
         .api-card {
             background: rgba(255,255,255,0.08);
             backdrop-filter: blur(10px);
             border-radius: 15px;
             padding: 20px;
             border: 1px solid rgba(255,255,255,0.15);
-            transition: transform 0.3s, box-shadow 0.3s;
+            transition: transform 0.3s;
         }
-
-        .api-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-            border-color: #ff6b6b;
-        }
-
+        .api-card:hover { transform: translateY(-5px); border-color: #ff6b6b; }
         .api-header {
             display: flex;
             justify-content: space-between;
@@ -105,42 +275,25 @@
             padding-bottom: 10px;
             border-bottom: 2px solid rgba(255,255,255,0.15);
         }
-
-        .api-name {
-            font-size: 1.2em;
-            font-weight: bold;
-        }
-
+        .api-name { font-size: 1.2em; font-weight: bold; }
         .api-method {
             background: #ff6b6b;
             padding: 3px 10px;
             border-radius: 20px;
             font-size: 0.65em;
-            font-weight: bold;
         }
-
         .api-url {
             background: rgba(0,0,0,0.5);
             padding: 8px;
             border-radius: 8px;
             font-family: monospace;
-            font-size: 0.7em;
-            margin: 10px 0;
+            font-size: 0.65em;
             word-break: break-all;
             color: #ffd93d;
+            margin: 10px 0;
         }
-
-        .input-group {
-            margin: 15px 0;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-size: 0.8em;
-            color: #aaa;
-        }
-
+        .input-group { margin: 15px 0; }
+        .input-group label { display: block; margin-bottom: 5px; font-size: 0.8em; color: #aaa; }
         .input-group input {
             width: 100%;
             padding: 10px;
@@ -148,14 +301,7 @@
             border: none;
             background: rgba(255,255,255,0.12);
             color: #fff;
-            font-size: 0.9em;
         }
-
-        .input-group input:focus {
-            outline: none;
-            background: rgba(255,255,255,0.2);
-        }
-
         button {
             width: 100%;
             padding: 12px;
@@ -165,109 +311,21 @@
             color: #fff;
             font-weight: bold;
             cursor: pointer;
-            transition: all 0.3s;
         }
-
-        button:hover {
-            opacity: 0.85;
-            transform: scale(1.01);
-        }
-
+        button:hover { opacity: 0.85; }
         .result {
             margin-top: 15px;
             padding: 10px;
             background: rgba(0,0,0,0.5);
             border-radius: 8px;
             font-family: monospace;
-            font-size: 0.75em;
-            max-height: 200px;
+            font-size: 0.7em;
+            max-height: 150px;
             overflow: auto;
             white-space: pre-wrap;
-            word-break: break-all;
         }
-
-        .result.loading {
-            color: #ffd93d;
-        }
-
-        .result.error {
-            color: #ff6b6b;
-        }
-
-        .result.success {
-            color: #00ff88;
-        }
-
-        .admin-panel {
-            background: rgba(0,0,0,0.4);
-            border-radius: 15px;
-            padding: 20px;
-            margin-top: 30px;
-        }
-
-        .admin-header {
-            font-size: 1.3em;
-            margin-bottom: 20px;
-            color: #ffd93d;
-        }
-
-        .admin-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-
-        .stat-card {
-            background: rgba(255,255,255,0.08);
-            padding: 15px;
-            border-radius: 10px;
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 1.8em;
-            font-weight: bold;
-            color: #ff6b6b;
-        }
-
-        .stat-label {
-            font-size: 0.7em;
-            color: #aaa;
-        }
-
-        .admin-buttons {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .admin-btn {
-            flex: 1;
-            min-width: 100px;
-            background: rgba(255,255,255,0.15);
-        }
-
-        .admin-btn.danger {
-            background: linear-gradient(45deg, #ff4444, #cc0000);
-        }
-
-        .footer {
-            text-align: center;
-            margin-top: 40px;
-            padding: 20px;
-            color: #555;
-            font-size: 0.7em;
-        }
-
-        @media (max-width: 768px) {
-            .api-grid {
-                grid-template-columns: 1fr;
-            }
-            .header h1 {
-                font-size: 1.5em;
-            }
-        }
+        .footer { text-align: center; margin-top: 40px; padding: 20px; color: #555; font-size: 0.7em; }
+        @media (max-width: 768px) { .api-grid { grid-template-columns: 1fr; } .header h1 { font-size: 1.5em; } }
     </style>
 </head>
 <body>
@@ -277,277 +335,89 @@
             <p>JavaScript Korumalı API'leri Aşan En Güçlü Sistem</p>
             <div class="features">
                 <span class="feature-badge">🤖 Googlebot Taklidi</span>
-                <span class="feature-badge">📱 130+ User-Agent</span>
+                <span class="feature-badge">📱 5+ Güçlü User-Agent</span>
                 <span class="feature-badge">🛡️ JS Koruma Aşma</span>
                 <span class="feature-badge">⚡ Cloudflare Bypass</span>
                 <span class="feature-badge">🚀 11 Bağımsız API</span>
             </div>
-            <div class="status-badge" id="apiStatus">✅ 11 API Aktif</div>
         </div>
 
         <div class="api-grid" id="apiGrid"></div>
-
-        <div class="admin-panel">
-            <div class="admin-header">⚙️ ADMIN PANEL</div>
-            <div class="admin-stats" id="adminStats">
-                <div class="stat-card">
-                    <div class="stat-number" id="totalQueries">0</div>
-                    <div class="stat-label">Toplam Sorgu</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="activeUsers">0</div>
-                    <div class="stat-label">Aktif Kullanıcı</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="successRate">0%</div>
-                    <div class="stat-label">Başarı Oranı</div>
-                </div>
-            </div>
-            <div class="admin-buttons">
-                <button class="admin-btn" onclick="exportLogs()">📥 Logları İndir</button>
-                <button class="admin-btn" onclick="clearLogs()">🗑 Logları Temizle</button>
-                <button class="admin-btn danger" onclick="resetAll()">🔄 Sıfırla</button>
-            </div>
-        </div>
-
-        <div class="footer">
-            DOX-REX-VİP-SORGU-BOT | © 2024 | @doxbimyetkili
-        </div>
+        <div class="footer">DOX-REX-VİP-SORGU-BOT | © 2024 | @doxbimyetkili</div>
     </div>
 
     <script>
-        // ================= API KONFİGÜRASYONU =================
-        // ANA API URL (Render.com'daki API'nin adresi)
-        const API_BASE_URL = "https://sorguapileromonline.onrender.com";
-        
-        // ================= EN GÜÇLÜ USER-AGENT LİSTESİ =================
-        const USER_AGENTS = [
-            'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-            'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1)',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-            'Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/119.0',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-            'Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-        ];
-
-        // Rastgele User-Agent seç
-        function getRandomUserAgent() {
-            return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-        }
-
-        // ================= API LİSTESİ (HER BİRİ KENDİ ENDPOINT'İNE BAĞLI) =================
+        // API Listesi (HER BİRİ KENDİ ENDPOINT'İNE BAĞLI)
         const API_LIST = [
-            { id: 'tc', name: '🔍 TC Sorgu', endpoint: '/api/tc', params: [{ name: 'tc', label: 'TC Kimlik No', type: 'text', placeholder: '11 haneli TC' }] },
-            { id: 'gsm', name: '📞 GSM Sorgu', endpoint: '/api/gsm', params: [{ name: 'gsm', label: 'GSM Numarası', type: 'text', placeholder: '5XXXXXXXXXX' }] },
-            { id: 'adres', name: '🏠 Adres Sorgu', endpoint: '/api/adres', params: [{ name: 'tc', label: 'TC Kimlik No', type: 'text', placeholder: '11 haneli TC' }] },
-            { id: 'aile', name: '👨‍👩‍👧 Aile Sorgu', endpoint: '/api/aile', params: [{ name: 'tc', label: 'TC Kimlik No', type: 'text', placeholder: '11 haneli TC' }] },
-            { id: 'sulale', name: '🌳 Sülasle Sorgu', endpoint: '/api/sulale', params: [{ name: 'tc', label: 'TC Kimlik No', type: 'text', placeholder: '11 haneli TC' }] },
-            { id: 'limitsiz', name: '🚀 Limitsiz Sorgu', endpoint: '/api/limitsiz', params: [{ name: 'tc', label: 'TC Kimlik No', type: 'text', placeholder: '11 haneli TC' }] },
-            { id: 'cc', name: '💳 CC Sorgu', endpoint: '/api/cc', params: [{ name: 'bin', label: 'BIN Kodu', type: 'text', placeholder: 'İlk 6 hane' }] },
-            { id: 'bin', name: '🏦 BIN Sorgu', endpoint: '/api/bin', params: [{ name: 'bin', label: 'BIN Kodu', type: 'text', placeholder: 'İlk 6 hane' }] },
-            { id: 'ip', name: '🌐 IP Sorgu', endpoint: '/api/ip', params: [{ name: 'ip', label: 'IP Adresi', type: 'text', placeholder: '8.8.8.8' }] },
-            { id: 'adsoyad', name: '👤 Ad-Soyad Sorgu', endpoint: '/api/adsoyad', params: [{ name: 'adi', label: 'Ad', type: 'text', placeholder: 'Ahmet' }, { name: 'soyadi', label: 'Soyad', type: 'text', placeholder: 'Yılmaz' }] },
-            { id: 'tcgsm', name: '📱 TC-GSM Sorgu', endpoint: '/api/tcgsm', params: [{ name: 'tc', label: 'TC Kimlik No', type: 'text', placeholder: '11 haneli TC' }] }
+            { id: 'tc', name: '🔍 TC Sorgu', endpoint: '/api/tc.php', params: [{ name: 'tc', label: 'TC Kimlik No', placeholder: '11 haneli TC' }] },
+            { id: 'gsm', name: '📞 GSM Sorgu', endpoint: '/api/gsm.php', params: [{ name: 'gsm', label: 'GSM Numarası', placeholder: '5XXXXXXXXXX' }] },
+            { id: 'adres', name: '🏠 Adres Sorgu', endpoint: '/api/adres.php', params: [{ name: 'tc', label: 'TC Kimlik No', placeholder: '11 haneli TC' }] },
+            { id: 'aile', name: '👨‍👩‍👧 Aile Sorgu', endpoint: '/api/aile.php', params: [{ name: 'tc', label: 'TC Kimlik No', placeholder: '11 haneli TC' }] },
+            { id: 'sulale', name: '🌳 Sülasle Sorgu', endpoint: '/api/sulale.php', params: [{ name: 'tc', label: 'TC Kimlik No', placeholder: '11 haneli TC' }] },
+            { id: 'limitsiz', name: '🚀 Limitsiz Sorgu', endpoint: '/api/limitsiz.php', params: [{ name: 'tc', label: 'TC Kimlik No', placeholder: '11 haneli TC' }] },
+            { id: 'cc', name: '💳 CC Sorgu', endpoint: '/api/cc.php', params: [{ name: 'bin', label: 'BIN Kodu', placeholder: 'İlk 6 hane' }] },
+            { id: 'bin', name: '🏦 BIN Sorgu', endpoint: '/api/bin.php', params: [{ name: 'bin', label: 'BIN Kodu', placeholder: 'İlk 6 hane' }] },
+            { id: 'ip', name: '🌐 IP Sorgu', endpoint: '/api/ip.php', params: [{ name: 'ip', label: 'IP Adresi', placeholder: '8.8.8.8' }] },
+            { id: 'adsoyad', name: '👤 Ad-Soyad Sorgu', endpoint: '/api/adsoyad.php', params: [{ name: 'adi', label: 'Ad', placeholder: 'Ahmet' }, { name: 'soyadi', label: 'Soyad', placeholder: 'Yılmaz' }] },
+            { id: 'tcgsm', name: '📱 TC-GSM Sorgu', endpoint: '/api/tcgsm.php', params: [{ name: 'tc', label: 'TC Kimlik No', placeholder: '11 haneli TC' }] }
         ];
 
-        // LocalStorage
-        let queryLogs = JSON.parse(localStorage.getItem('queryLogs') || '[]');
-        let totalQueries = queryLogs.length;
-
-        // ================= API İSTEK FONKSİYONU =================
-        async function callAPI(apiId, params) {
-            const resultDiv = document.getElementById(`result-${apiId}`);
-            resultDiv.innerHTML = '⏳ Googlebot ile sorgulanıyor... (JS koruması aşılıyor)';
-            resultDiv.className = 'result loading';
-            
-            try {
-                // API endpoint'ini bul
-                const api = API_LIST.find(a => a.id === apiId);
-                if (!api) throw new Error('API bulunamadı');
-                
-                // URL oluştur (HER API KENDİ ENDPOINT'İNE BAĞLI)
-                let url = `${API_BASE_URL}${api.endpoint}`;
-                const queryParams = new URLSearchParams();
-                
-                for (const [key, value] of Object.entries(params)) {
-                    if (value) queryParams.append(key, value);
-                }
-                
-                if (queryParams.toString()) {
-                    url += '?' + queryParams.toString();
-                }
-                
-                console.log(`Sorgu: ${apiId} -> ${url}`);
-                
-                // GÜÇLÜ USER-AGENT ile istek
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'User-Agent': getRandomUserAgent(),
-                        'Accept': 'application/json, text/plain, */*',
-                        'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
-                        'Referer': 'https://www.google.com/',
-                        'Origin': API_BASE_URL
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                
-                // Log kaydet
-                queryLogs.unshift({
-                    id: apiId,
-                    endpoint: api.endpoint,
-                    params: params,
-                    result: data,
-                    timestamp: new Date().toISOString(),
-                    userAgent: getRandomUserAgent()
-                });
-                
-                if (queryLogs.length > 100) queryLogs.pop();
-                localStorage.setItem('queryLogs', JSON.stringify(queryLogs));
-                
-                // İstatistikleri güncelle
-                totalQueries = queryLogs.length;
-                document.getElementById('totalQueries').innerText = totalQueries;
-                document.getElementById('activeUsers').innerText = Math.floor(Math.random() * 50) + 10;
-                
-                const successCount = queryLogs.filter(log => log.result && !log.result.error).length;
-                const successRate = totalQueries > 0 ? Math.round((successCount / totalQueries) * 100) : 0;
-                document.getElementById('successRate').innerText = `${successRate}%`;
-                
-                // Sonucu göster
-                resultDiv.innerHTML = JSON.stringify(data, null, 2);
-                resultDiv.className = 'result success';
-                
-            } catch (error) {
-                resultDiv.innerHTML = `❌ Hata: ${error.message}\n\nAPI URL: ${API_BASE_URL}\n\nNot: Backend API'nin çalıştığından emin olun.`;
-                resultDiv.className = 'result error';
-            }
-        }
-
-        // ================= API KARTLARINI OLUŞTUR =================
-        function createAPICards() {
-            const grid = document.getElementById('apiGrid');
-            grid.innerHTML = '';
-            
-            API_LIST.forEach(api => {
-                const card = document.createElement('div');
-                card.className = 'api-card';
-                
-                let inputsHtml = '';
-                api.params.forEach(param => {
-                    inputsHtml += `
-                        <div class="input-group">
-                            <label>${param.label}</label>
-                            <input type="${param.type}" id="${api.id}_${param.name}" placeholder="${param.placeholder}">
-                        </div>
-                    `;
-                });
-                
-                card.innerHTML = `
-                    <div class="api-header">
-                        <span class="api-name">${api.name}</span>
-                        <span class="api-method">GET</span>
-                    </div>
-                    <div class="api-url">${API_BASE_URL}${api.endpoint}</div>
-                    ${inputsHtml}
-                    <button onclick="executeQuery('${api.id}', ${JSON.stringify(api.params.map(p => p.name))})">
-                        🔍 Sorgula (Googlebot)
-                    </button>
-                    <div class="result" id="result-${api.id}">Sorgu bekleniyor...</div>
-                `;
-                
-                grid.appendChild(card);
-            });
-        }
-        
-        // Sorgu çalıştır
-        window.executeQuery = function(apiId, paramNames) {
+        function executeQuery(apiId, paramNames) {
             const params = {};
             paramNames.forEach(name => {
                 const input = document.getElementById(`${apiId}_${name}`);
                 if (input && input.value) params[name] = input.value;
             });
-            callAPI(apiId, params);
-        };
-        
-        // Admin fonksiyonları
-        window.exportLogs = function() {
-            const dataStr = JSON.stringify(queryLogs, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-            const linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', `sorgu_loglari_${new Date().toISOString()}.json`);
-            linkElement.click();
-        };
-        
-        window.clearLogs = function() {
-            if (confirm('Tüm loglar silinecek. Devam?')) {
-                queryLogs = [];
-                localStorage.setItem('queryLogs', JSON.stringify(queryLogs));
-                totalQueries = 0;
-                document.getElementById('totalQueries').innerText = '0';
-                document.getElementById('successRate').innerText = '0%';
-                alert('✅ Loglar temizlendi!');
-            }
-        };
-        
-        window.resetAll = function() {
-            if (confirm('TÜM VERİLER SİLİNECEK! Devam?')) {
-                localStorage.clear();
-                queryLogs = [];
-                totalQueries = 0;
-                document.getElementById('totalQueries').innerText = '0';
-                document.getElementById('activeUsers').innerText = '0';
-                document.getElementById('successRate').innerText = '0%';
-                
-                API_LIST.forEach(api => {
-                    const resultDiv = document.getElementById(`result-${api.id}`);
-                    if (resultDiv) {
-                        resultDiv.innerHTML = 'Sorgu bekleniyor...';
-                        resultDiv.className = 'result';
-                    }
+            
+            const resultDiv = document.getElementById(`result-${apiId}`);
+            resultDiv.innerHTML = '⏳ Sorgulanıyor... (Googlebot ile)';
+            
+            const queryString = new URLSearchParams(params).toString();
+            const url = `${API_LIST.find(a => a.id === apiId).endpoint}?${queryString}`;
+            
+            fetch(url, {
+                headers: { 'User-Agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                resultDiv.innerHTML = JSON.stringify(data, null, 2);
+            })
+            .catch(err => {
+                resultDiv.innerHTML = `❌ Hata: ${err.message}`;
+            });
+        }
+
+        function createAPICards() {
+            const grid = document.getElementById('apiGrid');
+            API_LIST.forEach(api => {
+                const card = document.createElement('div');
+                card.className = 'api-card';
+                let inputsHtml = '';
+                api.params.forEach(param => {
+                    inputsHtml += `
+                        <div class="input-group">
+                            <label>${param.label}</label>
+                            <input type="text" id="${api.id}_${param.name}" placeholder="${param.placeholder}">
+                        </div>
+                    `;
                 });
-                alert('✅ Tüm veriler sıfırlandı!');
-            }
-        };
-        
-        // İstatistikleri güncelle
-        function updateStats() {
-            document.getElementById('totalQueries').innerText = totalQueries;
-            const successCount = queryLogs.filter(log => log.result && !log.result.error).length;
-            const successRate = totalQueries > 0 ? Math.round((successCount / totalQueries) * 100) : 0;
-            document.getElementById('successRate').innerText = `${successRate}%`;
+                card.innerHTML = `
+                    <div class="api-header">
+                        <span class="api-name">${api.name}</span>
+                        <span class="api-method">GET</span>
+                    </div>
+                    <div class="api-url">${api.endpoint}?${api.params.map(p => p.name + '=...').join('&')}</div>
+                    ${inputsHtml}
+                    <button onclick="executeQuery('${api.id}', ${JSON.stringify(api.params.map(p => p.name))})">
+                        🔍 Sorgula
+                    </button>
+                    <div class="result" id="result-${api.id}">Sorgu bekleniyor...</div>
+                `;
+                grid.appendChild(card);
+            });
         }
         
-        // Sayfa yüklendiğinde
-        document.addEventListener('DOMContentLoaded', () => {
-            createAPICards();
-            updateStats();
-            setInterval(updateStats, 10000);
-            
-            // API durumunu kontrol et
-            fetch(`${API_BASE_URL}/`).then(res => {
-                if (res.ok) {
-                    document.getElementById('apiStatus').innerHTML = '✅ 11 API Aktif - Bağlantı Var';
-                    document.getElementById('apiStatus').style.background = '#00ff88';
-                }
-            }).catch(() => {
-                document.getElementById('apiStatus').innerHTML = '⚠️ API Bağlantısı Bekleniyor';
-                document.getElementById('apiStatus').style.background = '#ffaa00';
-            });
-        });
+        document.addEventListener('DOMContentLoaded', createAPICards);
     </script>
 </body>
 </html>
